@@ -29,7 +29,7 @@ const validator = new ParseFilePipe({
   ],
 });
 
-@Controller('api')
+@Controller('/api')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 

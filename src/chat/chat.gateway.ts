@@ -1,38 +1,74 @@
 import {
   WebSocketGateway,
+  OnGatewayConnection,
   SubscribeMessage,
-  MessageBody,
+  OnGatewayDisconnect,
+  WebSocketServer,
+  OnGatewayInit,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
-import { CreateChatDto } from './dto/create-chat.dto';
-import { UpdateChatDto } from './dto/update-chat.dto';
+import { ChatPaylod } from './chat.interface';
 
-@WebSocketGateway(8081, { transports: ['websocket'] })
-export class ChatGateway {
+@WebSocketGateway({ cors: { origin: '*' } })
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   constructor(private readonly chatService: ChatService) {}
 
-  @SubscribeMessage('createChat')
-  create(@MessageBody() createChatDto: CreateChatDto) {
-    return this.chatService.create(createChatDto);
+  private readonly logger = new Logger(ChatGateway.name);
+  @WebSocketServer() io: Server;
+
+  afterInit() {
+    this.logger.log('Initialized');
   }
 
-  @SubscribeMessage('findAllChat')
-  findAll(@MessageBody() user_id: string) {
-    return this.chatService.findAll(user_id);
+  async handleConnection(client: Socket, ...args: any[]) {
+    const { sockets } = this.io.sockets;
+
+    const userId = client.handshake.headers['user-id'];
+    if (!userId) {
+      return new Error('User Id is not specified');
+    }
+
+    const chats = await this.chatService.findAll(userId as string);
+    for (const chat of chats) {
+      client.join(chat.room_id.toString());
+    }
+
+    this.logger.log(`Client id: ${client.id} connected`);
+    this.logger.debug(`Number of connected clients: ${sockets.size}`);
   }
 
-  @SubscribeMessage('removeChat')
-  remove(@MessageBody() id: string) {
-    return this.chatService.remove(id);
+  handleDisconnect(client: any) {
+    this.logger.log(`Cliend id:${client.id} disconnected`);
   }
 
-  @SubscribeMessage('viewMessages')
-  findOne(@MessageBody() id: string) {
-    return this.chatService.findOne(id);
+  @SubscribeMessage('ping')
+  handleMessage(client: any, msg: any) {
+    this.logger.log(`Message received from client id: ${client.id}`);
+    this.logger.debug(`Payload: ${msg}`);
+
+    const data = {
+      event: 'pong',
+      data: 'hello from pong',
+    };
+
+    this.io.emit('ping', data);
   }
 
   @SubscribeMessage('sendMessage')
-  update(@MessageBody() updateChatDto: UpdateChatDto) {
-    return this.chatService.update(updateChatDto._id, updateChatDto);
+  async handleSendMessage(client: Socket, data: ChatPaylod) {
+    this.logger.log(`Message received from client id: ${client.id}`);
+    this.logger.debug(`Payload: ${data}`);
+
+    const roomId = data.room_id;
+    const chat = await this.chatService.findOneByRoom(roomId);
+
+    chat.messages.push(data.message);
+    await chat.save();
+
+    this.io.to(roomId).emit('sendMessage', data.message);
   }
 }

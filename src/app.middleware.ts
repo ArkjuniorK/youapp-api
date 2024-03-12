@@ -12,23 +12,29 @@ import * as jwt from 'jsonwebtoken';
 export function validator(): Handler {
   return function (req: Request, res: Response, next: NextFunction) {
     const urlPath = req.path;
-    if (
-      urlPath !== '/docs' ||
-      urlPath !== '/login' ||
-      urlPath !== '/register'
-    ) {
-      const secret = 'mysecret'; // TODO: replace with real secret key
-      const token = req.cookies['token'];
-      if (!token) {
-        res.status(HttpStatus.UNAUTHORIZED);
-        return;
-      }
 
-      const result = jwt.verify(token, secret);
-      if (!result) {
-        res.status(HttpStatus.UNAUTHORIZED);
-        return;
-      }
+    if (
+      urlPath.includes('/docs') ||
+      urlPath.includes('/login') ||
+      urlPath.includes('/register')
+    ) {
+      next();
+      return;
+    }
+
+    const secret = 'mysecret'; // TODO: replace with real secret key
+    const token = req.cookies['token'];
+    if (!token) {
+      res.status(HttpStatus.UNAUTHORIZED);
+      res.end();
+      return;
+    }
+
+    const result = jwt.verify(token, secret);
+    if (!result) {
+      res.status(HttpStatus.UNAUTHORIZED);
+      res.end();
+      return;
     }
 
     next();
